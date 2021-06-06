@@ -13,11 +13,15 @@ SKT에서 개발한 KoGPT2를 기반으로 정희원님이 제작하신 챗봇 �
 
 ## 구성원  
   
-박병학 (팀리딩, 모델 리서치 및 학습)
-박상효 (데이터 분석 및 정제, 웹개발)
-이창호 (데이터 분석 및 수집)
+박병학 (팀리딩, 모델 리서치 및 학습) [![GitHub-Mark-32px](https://user-images.githubusercontent.com/48716219/102974622-31c3b680-4542-11eb-815d-70efcdeb2e75.png)](https://github.com/Ethan0625)[![nb30](https://user-images.githubusercontent.com/48716219/102975150-f37ac700-4542-11eb-9606-9414ed89f0de.png)](https://ethan-library.tistory.com/)
+
+박상효 (데이터 분석 및 정제, 웹개발) [![GitHub-Mark-32px](https://user-images.githubusercontent.com/48716219/102974622-31c3b680-4542-11eb-815d-70efcdeb2e75.png)](https://github.com/ixxxxu/) [![nb30](https://user-images.githubusercontent.com/48716219/102975150-f37ac700-4542-11eb-9606-9414ed89f0de.png)](https://velog.io/@ixxxxuxo)
+
+이창호 (데이터 분석 및 수집) 
+
 임진호 (데이터 분석 및 수집)
-장인학 (모델 리서치 및 학습)
+
+장인학 (모델 리서치 및 학습)  
 
 
 ## Project milestone  
