@@ -2,9 +2,14 @@
 import argparse
 import logging
 
+
+
+
 import numpy as np
 import pandas as pd
 import torch
+from pydantic import BaseModel, Field
+
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.core.lightning import LightningModule
@@ -212,7 +217,8 @@ class KoGPT2Chat(LightningModule):
                     a += gen.replace('▁', ' ')
                     if len(a) > 500: # 무한루프 방지
                         break 
-                print("Wagle > {}".format(a.strip()))
+                #print("Wagle > {}".format(a.strip()))
+                return a.strip() # str 리턴
 
 
 parser = KoGPT2Chat.add_model_specific_args(parser)
@@ -242,3 +248,36 @@ if __name__ == "__main__":
     if args.chat:
         model = KoGPT2Chat.load_from_checkpoint(args.model_params)
         model.chat()
+
+
+class User(BaseModel):
+    '''
+    ... (ellipsis) : 해당 필드가 필수적(required)
+    title : 필드명을 지정해준다. 만약 생략되면 field_name.title() 이 사용됩니다.
+    description : description을 별도로 지정하면, opyrator에서 물음표 아이콘을 통해 해당 필드에 대한 안내를 제공
+    max_length : 텍스트의 최대 길이를 지정
+    ge : 해당 값의 최대값
+    le : 해당 값의 최소값
+    default : 초기값
+    '''
+    user : str = Field(
+        ...,
+        title = "User",
+        max_length = 180
+    )
+
+class Wagle(BaseModel):
+    '''
+    ... (ellipsis) : 해당 필드가 필수적(required)
+    title : 필드명을 지정해준다. 만약 생략되면 field_name.title() 이 사용됩니다.
+    description : description을 별도로 지정하면, opyrator에서 물음표 아이콘을 통해 해당 필드에 대한 안내를 제공
+    max_length : 텍스트의 최대 길이를 지정
+    ge : 해당 값의 최대값
+    le : 해당 값의 최소값
+    default : 초기값
+    '''
+    comcom : str = Field(
+        ...,
+        title = "Wagle",
+        max_length = 180
+    )
