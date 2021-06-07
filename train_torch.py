@@ -212,7 +212,9 @@ class KoGPT2Chat(LightningModule):
                     a += gen.replace('▁', ' ')
                     if len(a) > 500: # 무한루프 방지
                         break 
-                print("Wagle > {}".format(a.strip()))
+                #print("Wagle > {}".format(a.strip()))
+                return a.strip() # 웹용 문장 리턴
+
 
 
 parser = KoGPT2Chat.add_model_specific_args(parser)

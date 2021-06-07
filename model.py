@@ -276,7 +276,7 @@ class Wagle(BaseModel):
     le : 해당 값의 최소값
     default : 초기값
     '''
-    comcom : str = Field(
+    wagle : str = Field(
         ...,
         title = "Wagle",
         max_length = 180
