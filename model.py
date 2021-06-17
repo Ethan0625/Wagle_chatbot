@@ -214,9 +214,10 @@ class KoGPT2Chat(LightningModule):
                             dim=-1).squeeze().numpy().tolist())[-1]
                     if gen == EOS:
                         break
-                    a += gen.replace('▁', ' ')
-                    if len(a) > 500: # 무한루프 방지
+                    if len(a) > 200: # 무한루프 방지
                         break 
+                    a += gen.replace('▁', ' ')
+                    
                 #print("Wagle > {}".format(a.strip()))
                 return a.strip() # str 리턴
 
@@ -265,6 +266,13 @@ class User(BaseModel):
         title = "User",
         max_length = 180
     )
+    # length : int = Field(
+    #     10,
+    #     title = "Length",
+    #     description="The length of the sequence to be generated.",
+    #     ge=5,
+    #     le=50,
+    # )
 
 class Wagle(BaseModel):
     '''
@@ -281,3 +289,5 @@ class Wagle(BaseModel):
         title = "Wagle",
         max_length = 180
     )
+
+
