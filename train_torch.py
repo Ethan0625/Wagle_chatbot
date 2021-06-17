@@ -209,9 +209,11 @@ class KoGPT2Chat(LightningModule):
                             dim=-1).squeeze().numpy().tolist())[-1]
                     if gen == EOS:
                         break
-                    a += gen.replace('▁', ' ')
                     if len(a) > 500: # 무한루프 방지
                         break 
+                    
+                    a += gen.replace('▁', ' ')
+                    
                 #print("Wagle > {}".format(a.strip()))
                 return a.strip() # 웹용 문장 리턴
 
