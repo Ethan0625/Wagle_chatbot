@@ -1,6 +1,8 @@
 pandas
 pytorch_lightning==1.2.10
 torch
+torchvision
+tensorboard
 transformers==4.5.1
 opyrator
 watchdog

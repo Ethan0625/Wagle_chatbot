@@ -2,13 +2,17 @@
 import argparse
 import logging
 
+import random
+from collections import Counter
+import math
 import numpy as np
 import pandas as pd
 import torch
 from pytorch_lightning import Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pytorch_lightning.core.lightning import LightningModule
 from torch.utils.data import DataLoader, Dataset
+from torch.utils.tensorboard import SummaryWriter
 from transformers.optimization import AdamW, get_cosine_schedule_with_warmup
 from transformers import PreTrainedTokenizerFast, GPT2LMHeadModel
 
@@ -52,14 +56,14 @@ TOKENIZER = PreTrainedTokenizerFast.from_pretrained("skt/kogpt2-base-v2",
 
 class CharDataset(Dataset):
     def __init__(self, chats, max_len=32):
-        self._data = chats # 학습 데이터(csv)
+        self._data = chats
         self.first = True
         self.q_token = U_TKN
         self.a_token = S_TKN
         self.sent_token = SENT
         self.bos = BOS
         self.eos = EOS
-        self.mask = MASK # 이모티콘
+        self.mask = MASK
         self.pad = PAD
         self.max_len = max_len
         self.tokenizer = TOKENIZER 
@@ -75,6 +79,7 @@ class CharDataset(Dataset):
         q_toked = self.tokenizer.tokenize(self.q_token + q + \
                                           self.sent_token + sentiment)   
         q_len = len(q_toked)
+        #print(type(q_len)) -> labels 안에 담기는 값 추적하기1
         a_toked = self.tokenizer.tokenize(self.a_token + a + self.eos)
         a_len = len(a_toked)
         if q_len + a_len > self.max_len:
@@ -124,12 +129,12 @@ class KoGPT2Chat(LightningModule):
         parser = argparse.ArgumentParser(parents=[parent_parser], add_help=False)
         parser.add_argument('--max-len',
                             type=int,
-                            default=32,
+                            default=100,
                             help='max sentence length on input (default: 32)')
 
         parser.add_argument('--batch-size',
                             type=int,
-                            default=96,
+                            default=32,
                             help='batch size for training (default: 96)')
         parser.add_argument('--lr',
                             type=float,
@@ -153,8 +158,41 @@ class KoGPT2Chat(LightningModule):
         mask_out = torch.where(mask_3d == 1, out, self.neg * torch.ones_like(out))
         loss = self.loss_function(mask_out.transpose(2, 1), label)
         loss_avg = loss.sum() / mask.sum()
-        self.log('train_loss', loss_avg)
-        return loss_avg
+        ppl=torch.exp(loss)
+        ppl_avg = ppl.sum() / mask.sum()
+        self.log('train_loss', loss_avg, on_step=True, on_epoch=True)
+        self.log('train_ppl', ppl_avg, on_step=True, on_epoch=True)
+        tensorboard_logs = {'train_loss':loss_avg,'train_ppl':ppl_avg}
+        return {'loss':loss_avg, 'train_ppl':ppl_avg, 'log':tensorboard_logs}
+    
+    def training_epoch_end(self, outputs):
+        avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
+        avg_ppl = torch.stack([x['train_ppl'] for x in outputs]).mean()
+        
+        self.logger.experiment.add_scalar("Loss/Train",avg_loss,self.current_epoch)
+        self.logger.experiment.add_scalar("PPL/Train",avg_ppl,self.current_epoch)
+            
+    def validation_step(self, batch, batch_idx):
+        token_ids, mask, label = batch
+        out = self(token_ids)
+        mask_3d = mask.unsqueeze(dim=2).repeat_interleave(repeats=out.shape[2], dim=2)
+        mask_out = torch.where(mask_3d == 1, out, self.neg * torch.ones_like(out))
+        val_loss = self.loss_function(mask_out.transpose(2, 1), label)
+        loss_avg = val_loss.sum() / mask.sum()
+        ppl=torch.exp(val_loss)
+        ppl_avg = ppl.sum() / mask.sum()
+        self.log('val_loss', loss_avg, on_step=True, on_epoch=True)
+        self.log('val_ppl', ppl_avg, on_step=True, on_epoch=True)
+        tensorboard_logs = {'val_loss':loss_avg,'val_ppl':ppl_avg}
+#        return loss_avg
+        return {'loss':loss_avg, 'val_ppl':ppl_avg, 'log':tensorboard_logs}
+
+    def validation_epoch_end(self, outputs):
+        avg_loss = torch.stack([x['loss'] for x in outputs]).mean()
+        avg_ppl = torch.stack([x['val_ppl'] for x in outputs]).mean()
+        
+        self.logger.experiment.add_scalar("Loss/Val",avg_loss,self.current_epoch)
+        self.logger.experiment.add_scalar("PPL/Val",avg_ppl,self.current_epoch)
 
     def configure_optimizers(self):
         # Prepare optimizer
@@ -184,39 +222,53 @@ class KoGPT2Chat(LightningModule):
         return torch.LongTensor(data), torch.LongTensor(mask), torch.LongTensor(label)
 
     def train_dataloader(self):
-        data = pd.read_csv('Chatbot_data/ChatbotData.csv')
+        data = pd.read_csv('data/SDRW_long.csv')
+        train_len = int(0.9*len(data))
+        data = data.loc[0:train_len]
         self.train_set = CharDataset(data, max_len=self.hparams.max_len)
         train_dataloader = DataLoader(
             self.train_set, batch_size=self.hparams.batch_size, num_workers=2,
             shuffle=True, collate_fn=self._collate_fn)
         return train_dataloader
+    
+    def val_dataloader(self):
+        data = pd.read_csv('data/SDRW_long.csv')
+        train_len = int(0.9*len(data))
+        data = data.loc[train_len:]
+        self.val_set = CharDataset(data, max_len=self.hparams.max_len)
+        val_dataloader = DataLoader(
+            self.val_set, batch_size=self.hparams.batch_size, num_workers=2,
+            shuffle=True, collate_fn=self._collate_fn)
+        return val_dataloader
+    
+    def generate(self,input_ids,max_length=40, do_sample=True, repetition_penalty=2.0):
+        output = self.kogpt2.generate(input_ids, 
+                                         max_length=max_length, 
+                                         do_sample=do_sample, 
+                                         repetition_penalty=repetition_penalty)
+        return output
 
-    def chat(self, sent='0'):
+    def chat(self,m, sent='0'):
         tok = TOKENIZER
-        sent_tokens = tok.tokenize(sent)
         with torch.no_grad():
             while 1:
                 q = input('user > ').strip()
                 if q == 'quit':
                     break
-                a = ''
-                while 1:
-                    input_ids = torch.LongTensor(tok.encode(U_TKN + q + SENT + sent + S_TKN + a)).unsqueeze(dim=0)
-                    pred = self(input_ids)
-                    gen = tok.convert_ids_to_tokens(
-                        torch.argmax(
-                            pred,
-                            dim=-1).squeeze().numpy().tolist())[-1]
-                    if gen == EOS:
-                        break
-                    if len(a) > 500: # 무한루프 방지
-                        break 
                     
-                    a += gen.replace('▁', ' ')
-                    
-                #print("Wagle > {}".format(a.strip()))
-                return a.strip() # 웹용 문장 리턴
+                input_ids = torch.LongTensor(tok.encode(U_TKN + q + SENT + sent + S_TKN)).unsqueeze(dim=0)
+                outputs = m.generate(input_ids, 
+                                         max_length=60, 
+                                         do_sample=True, 
+                                         repetition_penalty=2.0)
+                a = tok.decode(outputs[0], skip_special_tokens=True).split('0')[1:][0].strip()
+                if a.count('.') == 0:
+                    idx = a.rfind(' ')
+                    a = a.replace(a[idx:], ".")
+                else:
+                    a = a.split('.')[0] + '.' + a.split('.')[1] + '...메에'
 
+                print("Wagle > {}".format(a.strip()))
 
 
 parser = KoGPT2Chat.add_model_specific_args(parser)
@@ -230,6 +282,7 @@ if __name__ == "__main__":
             dirpath='model_chp',
             filename='{epoch:02d}-{train_loss:.2f}',
             verbose=True,
+            save_top_k=3,
             save_last=True,
             monitor='train_loss',
             mode='min',
@@ -238,11 +291,19 @@ if __name__ == "__main__":
         # python train_torch.py --train --gpus 1 --max_epochs 3
         model = KoGPT2Chat(args)
         model.train()
+        
+#        trainer = Trainer(resume_from_checkpoint='model_chp/model_-last.ckpt', gpus=[0], checkpoint_callback=checkpoint_callback, gradient_clip_val=1.0)
+        
         trainer = Trainer.from_argparse_args(
             args,
             checkpoint_callback=checkpoint_callback, gradient_clip_val=1.0)
         trainer.fit(model)
         logging.info('best model path {}'.format(checkpoint_callback.best_model_path))
+        
+        #after training init cuda
+#        torch.cuda.init() # cuda 초기화
+#        torch.cuda.empty_cache() # 사용중이 아닌 cuda 캐시메모리 해제      
+    
     if args.chat:
         model = KoGPT2Chat.load_from_checkpoint(args.model_params)
-        model.chat()
+        model.chat(m=model)
